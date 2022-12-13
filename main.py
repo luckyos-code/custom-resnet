@@ -9,7 +9,7 @@ import tensorflow as tf
 # TODO: check if this is still currently needed
 
 
-RUN_NAME = "resnet-imagenette-relu-1"
+RUN_NAME = "resnet-imagenette-tanh-3"
 
 
 def main():
