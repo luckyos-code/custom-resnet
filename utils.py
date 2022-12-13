@@ -57,7 +57,7 @@ def change_activation_function(model: Model, new_activation_function):
 #            layer.activation = new_activation_function
 
     # is this line needed???
-    model.activation = activations.tanh
+    model.activation = new_activation_function
 
     for layer in model.layers:
         # check if layer is an activation layer - if so, then replace activation function
