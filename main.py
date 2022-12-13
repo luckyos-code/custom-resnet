@@ -40,7 +40,9 @@ def main():
         classes=10,
     )
 
-    #change_activation_function(model, activations.tanh)
+    change_activation_function(model, activations.tanh)
+
+    model = apply_modifications(model)
 
     model.compile(
         optimizer="adam",
@@ -62,7 +64,7 @@ def main():
 
     model.save(f"saved_model/{RUN_NAME}.h5")
 
-    visualize_training(history, epochs)
+    visualize_training(history, epochs, f"Metrics-{RUN_NAME}.png")
 
 
 if __name__ == "__main__":
