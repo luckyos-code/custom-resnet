@@ -4,6 +4,10 @@ from keras import Model, activations
 from keras.applications import ResNet50
 from keras.layers.core.activation import Activation
 import tensorflow_datasets as tfds
+from keras.models import load_model
+
+import tempfile
+import os
 
 
 def load_train_ds(model_name: str, batch_size: int = 32):
@@ -61,7 +65,31 @@ def change_activation_function(model: Model, new_activation_function):
             layer.activation = new_activation_function
 
 
-def visualize_training(history, epochs):
+def apply_modifications(model, custom_objects=None):
+    """
+    Applies modifications to the model layers to create a new Graph. For example, simply changing
+    `model.layers[idx].activation = new activation` does not change the graph. The entire graph needs to be updated
+    with modified inbound and outbound tensors because of change in layer building function.
+    Args:
+        model: The `keras.models.Model` instance.
+    Returns:
+        The modified model with changes applied. Does not mutate the original `model`.
+
+    Copied from: https://github.com/raghakot/keras-vis/blob/master/vis/utils/utils.py#L95
+    """
+    # The strategy is to save the modified model and load it back. This is done because setting the activation
+    # in a Keras layer doesnt actually change the graph. We have to iterate the entire graph and change the
+    # layer inbound and outbound nodes with modified tensors. This is doubly complicated in Keras 2.x since
+    # multiple inbound and outbound nodes are allowed with the Graph API.
+    model_path = os.path.join(tempfile.gettempdir(), next(tempfile._get_candidate_names()) + '.h5')
+    try:
+        model.save(model_path)
+        return load_model(model_path, custom_objects=custom_objects)
+    finally:
+        os.remove(model_path)
+
+
+def visualize_training(history, epochs, file_save_name : str = None):
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
 
@@ -82,5 +110,8 @@ def visualize_training(history, epochs):
     plt.plot(epochs_range, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
-    plt.show()
 
+    if file_save_name is not None:
+        plt.savefig(file_save_name)
+    else:
+        plt.show()
