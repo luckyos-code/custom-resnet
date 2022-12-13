@@ -2,3 +2,4 @@ training/
 __pycache__/
 env/
 training/
+saved_model/
