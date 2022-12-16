@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from keras import Model, activations
-from keras.applications import ResNet50
 from keras.layers.core.activation import Activation
 import tensorflow_datasets as tfds
 from keras.models import load_model
@@ -76,6 +75,9 @@ def apply_modifications(model, custom_objects=None):
         The modified model with changes applied. Does not mutate the original `model`.
 
     Copied from: https://github.com/raghakot/keras-vis/blob/master/vis/utils/utils.py#L95
+
+
+    THIS FUNCTION DOES NOT SEEMS TO BE NEEDED ANYMORE
     """
     # The strategy is to save the modified model and load it back. This is done because setting the activation
     # in a Keras layer doesnt actually change the graph. We have to iterate the entire graph and change the
@@ -89,7 +91,7 @@ def apply_modifications(model, custom_objects=None):
         os.remove(model_path)
 
 
-def visualize_training(history, epochs, file_save_name : str = None):
+def visualize_training(history, epochs, file_save_name: str = None):
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
 

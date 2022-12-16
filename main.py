@@ -1,6 +1,7 @@
 from utils import *
 from keras import activations
 import tensorflow as tf
+from keras.applications import ResNet50
 
 
 # to make effectrs of the change we need to apply the modifcations of the model
@@ -41,8 +42,6 @@ def main():
     )
 
     change_activation_function(model, activations.tanh)
-
-    model = apply_modifications(model)
 
     model.compile(
         optimizer="adam",
