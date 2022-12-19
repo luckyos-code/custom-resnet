@@ -34,13 +34,6 @@ def load_val_ds(model_name: str, batch_size: int = 32):
     return ds[0]
 
 
-def resize_image(images, size):
-    """
-        Resizes given images to size
-    """
-    return tf.image.resize(images, size)
-
-
 def change_activation_function(model: Model, new_activation_function):
     """
         Sets new activation function to all 'Activation' layer in a model
@@ -117,3 +110,79 @@ def visualize_training(history, epochs, file_save_name: str = None):
         plt.savefig(file_save_name)
     else:
         plt.show()
+
+
+def get_image_dataset_resizer(img_size: int) -> tf.keras.Sequential:
+    """
+        Returns a keras sequential layer to resize dataset to a same length and width provided by *img_size*
+    """
+    resizer = tf.keras.Sequential([
+        tf.keras.layers.Resizing(img_size, img_size),
+    ])
+    return resizer
+
+
+def get_image_dataset_augmentater() -> tf.keras.Sequential:
+    """
+        Runs data augmentation tasks to prevent overfitting
+        Tasks run are:
+            - Random Horizontal Flip
+            - Random Vertical Flip
+            - Random Rotation
+            - Random Zoom
+    """
+
+    data_augmentation = tf.keras.Sequential([
+        tf.keras.layers.RandomFlip("horizontal_and_vertical"),
+        tf.keras.layers.RandomRotation(0.2),
+        tf.keras.layers.RandomZoom(0.1),
+    ])
+
+    return data_augmentation
+
+
+def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preprocessing: bool, batch_size: int = None, shuffle: bool = False, augment: bool = False) -> tf.data.Dataset:
+    """
+        Prepares datasets for training and validation for the ResNet50 model.
+        This function applies image resizing, resnet50-preprocessing to the dataset. Optionally the data can be shuffled or further get augmented (random flipping, etc.)
+    """
+    AUTOTUNE = tf.data.AUTOTUNE
+
+    # Resize and rescale all datasets.
+    resizer = get_image_dataset_resizer(img_size)
+    ds = ds.map(lambda x, y: (resizer(x), y),
+                num_parallel_calls=AUTOTUNE)
+
+    if apply_resnet50_preprocessing:
+        ds = ds.map(lambda x, y: (tf.keras.applications.resnet50.preprocess_input(x), y),
+                    num_parallel_calls=AUTOTUNE)
+
+    if shuffle:
+        ds = ds.shuffle(1000)
+
+    if batch_size is not None:
+        # Batch all datasets.
+        ds = ds.batch(batch_size)
+
+    augmenter = get_image_dataset_augmentater()
+    # Use data augmentation only on the training set.
+    if augment:
+        ds = ds.map(lambda x, y: (augmenter(x, training=True), y),
+                    num_parallel_calls=AUTOTUNE)
+
+    # Use buffered prefetching on all datasets.
+    return ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+def load_model_weights(filedir: str, img_shape: tuple) -> tf.keras.Model:
+    """
+        Loads a ResNet50 model instance with weights provided from *filedir*.
+    """
+    model: tf.keras.Model = tf.keras.applications.resnet50.ResNet50(
+        include_top=False,
+        weights=filedir,
+        input_shape=img_shape,
+        pooling=None,
+    )
+
+    return model

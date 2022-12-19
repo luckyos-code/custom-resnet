@@ -5,43 +5,29 @@ from keras.applications import ResNet50
 
 import numpy as np
 
-# to make effectrs of the change we need to apply the modifcations of the model
-# like i.e. here: https://github.com/raghakot/keras-vis/blob/master/vis/utils/utils.py
-# for this we need to save and reload the model
-# TODO: check if this is still currently needed
-
-
 RUN_NAME = "test-1"
 
 
 def train_resnet():
-    AUTOTUNE = tf.data.AUTOTUNE
-
-    BATCH_SIZE = 32
+    BATCH_SIZE = 16
     CLASSES = 10
     train_ds = load_train_ds("imagenette/160px-v2", batch_size=BATCH_SIZE)  # this does only returns cropped images with unused image space
     val_ds = load_val_ds("imagenette/160px-v2", batch_size=BATCH_SIZE)
 
     # resize datasets
-    IMG_SIZE = (160, 160)
-    train_ds = train_ds.map(lambda x, y: (resize_image(x, IMG_SIZE), y), num_parallel_calls=AUTOTUNE)
-    val_ds = val_ds.map(lambda x, y: (resize_image(x, IMG_SIZE), y), num_parallel_calls=AUTOTUNE)
+    IMG_SIZE = 224
 
-    # preprocess dataset
-    train_ds = train_ds.map(lambda x, y: (tf.keras.applications.resnet50.preprocess_input(x), y), num_parallel_calls=AUTOTUNE)
-    val_ds = val_ds.map(lambda x, y: (tf.keras.applications.resnet50.preprocess_input(x), y), num_parallel_calls=AUTOTUNE)
-
-    train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-    val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-    IMG_SHAPE = IMG_SIZE + (3,)
+    print("Preparing dataset")
+    train_ds = prepare_dataset(train_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True, shuffle=True, augment=True)
+    val_ds = prepare_dataset(val_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True)
 
     print("Loading Model")
     model: Model = ResNet50(
         include_top=True,
         weights=None,
-        input_shape=IMG_SHAPE,
+        # input_shape=IMG_SHAPE, # -> if include_top is specified, then dont use input_shape, but use default shape of (224,224,3)
         classes=CLASSES,
+        classifier_activation=None,  # activation function for "top" layer, if None -> returns logits
     )
 
     #change_activation_function(model, activations.tanh)
@@ -49,7 +35,7 @@ def train_resnet():
     print("Compiling Model")
     model.compile(
         optimizer=tf.keras.optimizers.Adam(),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         metrics=["accuracy"])
 
     # checkpoint setup
@@ -71,6 +57,11 @@ def train_resnet():
     model.save(f"saved_model/{RUN_NAME}.h5")
 
     visualize_training(history, epochs, f"Metrics-{RUN_NAME}.png")
+
+
+def load_resnet():
+    IMG_SHAPE = (224, 224, 3)  # channel_last data format
+    load_model_weights("training/test-1/", IMG_SHAPE)
 
 
 def main():
