@@ -1,3 +1,4 @@
+from keras.api._v2.keras import layers
 from utils import *
 from keras import activations
 import tensorflow as tf
@@ -59,19 +60,38 @@ def train_resnet():
     visualize_training(history, epochs, f"Metrics-{RUN_NAME}.png")
 
 
-def load_resnet():
+def load_resnet(unfreeze_layers : int = None):
     IMG_SHAPE = (224, 224, 3)  # channel_last data format
     IMG_SIZE = 224
     BATCH_SIZE = 16
     val_ds = load_val_ds("imagenette/160px-v2", batch_size=BATCH_SIZE)
     val_ds = prepare_dataset(val_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True)
 
-    model: tf.keras.Model = load_model_weights(IMG_SHAPE)
+    model: tf.keras.Model = tf.keras.applications.resnet50.ResNet50(
+        include_top=False,
+        weights=None,
+        input_shape=IMG_SHAPE,
+        pooling=None, # pooling mode for when include_top is False
+        classifier_activation=None, # None or "softmax" , only used if include_top = True
+    )
     model.load_weights("training/test-1/test-1.ckpt")
+
+    # freeze layers until 'unfreeze_layers' index of layers (so the last x layers can still be trained)
+    for layer in (model.layers) if not unfreeze_layers else (model.layers[:-unfreeze_layers]):
+        layer.trainable = False
+
+    inputs = layers.Input(shape=IMG_SHAPE)
+    x = model(inputs, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    outputs = layers.Dense(10, activation="softmax")(x)
+    model = Model(inputs,outputs)
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
         metrics=["accuracy"])
+
+    model.summary()
 
     _, acc = model.evaluate(val_ds, verbose="2")
     print("Loaded model, accuracy: {:5.2f}%".format(100 * acc))

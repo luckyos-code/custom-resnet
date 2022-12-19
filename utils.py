@@ -172,19 +172,3 @@ def prepare_dataset(ds, img_size: int, apply_resnet50_preprocessing: bool, batch
 
     # Use buffered prefetching on all datasets.
     return ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-
-def load_model_weights(img_shape: tuple) -> tf.keras.Model:
-    """
-        Loads a ResNet50 model instance with weights provided from *filedir*.
-    """
-    model: tf.keras.Model = tf.keras.applications.resnet50.ResNet50(
-        include_top=True,
-        weights=None,
-        input_shape=img_shape,
-        pooling=None, # pooling mode for when include_top is False
-        classifier_activation=None, # None or "softmax" , only used if include_top = True
-        classes=10,
-    )
-
-    return model
