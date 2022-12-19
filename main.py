@@ -18,7 +18,7 @@ def train_resnet():
     IMG_SIZE = 224
 
     print("Preparing dataset")
-    train_ds = prepare_dataset(train_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True, shuffle=True, augment=True)
+    train_ds = prepare_dataset(train_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True, shuffle=True, augment=False)
     val_ds = prepare_dataset(val_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True)
 
     print("Loading Model")
@@ -43,7 +43,7 @@ def train_resnet():
     # this saves the weights for us, which we can reload later on
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
 
-    epochs = 20
+    epochs = 1
     print(f"Training Model with {epochs} epochs")
     history = model.fit(
         train_ds,
@@ -61,11 +61,25 @@ def train_resnet():
 
 def load_resnet():
     IMG_SHAPE = (224, 224, 3)  # channel_last data format
-    load_model_weights("training/test-1/", IMG_SHAPE)
+    IMG_SIZE = 224
+    BATCH_SIZE = 16
+    val_ds = load_val_ds("imagenette/160px-v2", batch_size=BATCH_SIZE)
+    val_ds = prepare_dataset(val_ds, img_size=IMG_SIZE, apply_resnet50_preprocessing=True)
+
+    model: tf.keras.Model = load_model_weights(IMG_SHAPE)
+    model.load_weights("training/test-1/test-1.ckpt")
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=["accuracy"])
+
+    _, acc = model.evaluate(val_ds, verbose="2")
+    print("Loaded model, accuracy: {:5.2f}%".format(100 * acc))
 
 
 def main():
-    train_resnet()
+    # train_resnet()
+    load_resnet()
 
 
 if __name__ == "__main__":

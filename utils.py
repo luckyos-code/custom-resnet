@@ -141,7 +141,7 @@ def get_image_dataset_augmentater() -> tf.keras.Sequential:
     return data_augmentation
 
 
-def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preprocessing: bool, batch_size: int = None, shuffle: bool = False, augment: bool = False) -> tf.data.Dataset:
+def prepare_dataset(ds, img_size: int, apply_resnet50_preprocessing: bool, batch_size: int = None, shuffle: bool = False, augment: bool = False) -> tf.data.Dataset:
     """
         Prepares datasets for training and validation for the ResNet50 model.
         This function applies image resizing, resnet50-preprocessing to the dataset. Optionally the data can be shuffled or further get augmented (random flipping, etc.)
@@ -174,15 +174,17 @@ def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preproces
     return ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 
-def load_model_weights(filedir: str, img_shape: tuple) -> tf.keras.Model:
+def load_model_weights(img_shape: tuple) -> tf.keras.Model:
     """
         Loads a ResNet50 model instance with weights provided from *filedir*.
     """
     model: tf.keras.Model = tf.keras.applications.resnet50.ResNet50(
-        include_top=False,
-        weights=filedir,
+        include_top=True,
+        weights=None,
         input_shape=img_shape,
-        pooling=None,
+        pooling=None, # pooling mode for when include_top is False
+        classifier_activation=None, # None or "softmax" , only used if include_top = True
+        classes=10,
     )
 
     return model
