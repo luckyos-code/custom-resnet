@@ -5,10 +5,10 @@ import tensorflow as tf
 def main():
     print(f"Tensorflow Version: {tf.version.VERSION}")
 
-    resnet = PreTrainResNet(batch_size=32, image_size=224, run_name="test-1")
+    resnet = PreTrainResNet(batch_size=32, image_size=224, run_name="custom-resnet-1")
 
-    resnet.load_prepare_tfds_train_dataset("imagenette/160px-v2", resnet50_preprocessing=True, shuffle=True, augment=True)
-    resnet.load_prepare_tfds_validation_dataset("imagenette/160px-v2", resnet50_preprocessing=True, shuffle=False, augment=False)
+    resnet.load_prepare_tfds_train_dataset("imagenette", resnet50_preprocessing=True, shuffle=True, augment=True)
+    resnet.load_prepare_tfds_validation_dataset("imagenette", resnet50_preprocessing=True, shuffle=True, augment=False)
 
     # load an empty resnet50 model with random weights
     resnet.load_resnet_model(pooling="avg")
@@ -20,7 +20,7 @@ def main():
     resnet.compile_resnet_model()
 
     # train model
-    resnet.train_resnet_model(epochs=10, use_checkpoints=True, save_model=True, save_training_metrics_figure=True)
+    resnet.train_resnet_model(epochs=20, use_checkpoints=True, save_model=True, save_training_metrics_figure=True)
 
 
 if __name__ == "__main__":
