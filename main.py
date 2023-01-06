@@ -3,10 +3,12 @@ import tensorflow as tf
 
 
 def main():
+    print(f"Tensorflow Version: {tf.version.VERSION}")
+
     resnet = PreTrainResNet(batch_size=32, image_size=224, run_name="test-1")
 
-    resnet.load_prepare_tfds_train_dataset("imagenette", resnet50_preprocessing=True, shuffle=True, augment=True)
-    resnet.load_prepare_tfds_validation_dataset("imagenette", resnet50_preprocessing=True, shuffle=False, augment=False)
+    resnet.load_prepare_tfds_train_dataset("imagenette/160px-v2", resnet50_preprocessing=True, shuffle=True, augment=True)
+    resnet.load_prepare_tfds_validation_dataset("imagenette/160px-v2", resnet50_preprocessing=True, shuffle=False, augment=False)
 
     # load an empty resnet50 model with random weights
     resnet.load_resnet_model(pooling="avg")
