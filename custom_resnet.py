@@ -1,14 +1,14 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from typing import List, Tuple
+from typing import List, Tuple, Callable, Optional
 from keras.applications import ResNet50
 from keras import Model
-from keras.layers.core.activation import Activation
 import matplotlib.pyplot as plt
 
 # TODO: check default parameter for random dataset augmentations
 # TODO: change activation function of all layers that use an activation function, or only those of Activation layer?
 # TODO: how to prepend/ append more layers like input or output layer
+# TODO: put prepcrocessing/ resizing/ augentation on GPU
 
 
 class NotInitializedError(Exception):
@@ -24,51 +24,42 @@ class PreTrainResNet:
     def __init__(self, batch_size: int = 32, image_size: int = 224, run_name: str = "resnet-training"):
         self.batch_size: int = batch_size
         self.image_size: int = image_size
+        self.resnet_input_shape: Tuple[int, int, int] = (self.image_size, self.image_size, 3)
 
         self.run_name: str = run_name
 
-        self.ds_val: tf.data.Dataset = None
-        self.ds_train: tf.data.Dataset = None
-        self.resnet_model: Model = None
+        self.ds_val: tf.data.Dataset | None = None
+        self.ds_train: tf.data.Dataset | None = None
+        self.resnet_model: Model | None = None
 
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-        self.loss_function = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+        self.loss_function = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)  # we normally use the softmax activation at the end, so we disable logits in loss function
 
-    def load_and_prepare_tfds_dataset(self, dataset_name: str = "imagenette"):
-        print("Loading tfds dataset")
-        self.ds_train, self.ds_val = load_tfds(dataset_name, self.batch_size)
-
-        print("Preparing tfds dataset")
-        self.ds_train = prepare_dataset(self.ds_train, img_size=self.image_size, batch_size=self.batch_size, apply_resnet50_preprocessing=True, shuffle=True, augment=False)
-        self.ds_val = prepare_dataset(self.ds_val, img_size=self.image_size, batch_size=self.batch_size, apply_resnet50_preprocessing=True)
-
-    def load_and_prepare_external_dataset(self, ds_train: tf.data.Dataset, ds_val: tf.data.Dataset):
-        """
-            Takes an external training and validation dataset and applies the augmentation and resizing pipeline to it.
-            The modified datasets are then set in this class for further steps.
-        """
-        print("Loading and preparing external datasets")
-        self.ds_train = prepare_dataset(ds_train, img_size=self.image_size, batch_size=self.batch_size, apply_resnet50_preprocessing=True, shuffle=True, augment=False)
-        self.ds_val = prepare_dataset(ds_val, img_size=self.image_size, batch_size=self.batch_size, apply_resnet50_preprocessing=True)
-
-    def load_resnet_model(self, custom_model: Model = None, pooling: str = None, pre_trained_weights_location: str = None, idx_unfreezed_layer: int = 0):
+    def load_resnet_model(self, custom_model: Optional[Model] = None, pooling: Optional[str] = None, pre_trained_weights_location: Optional[str] = None, idx_unfreezed_layer: int = 0):
         """
              Loads a ResNet model and sets it for this class.
              If no custom model is given to this function. the default keras ResNet50 is used as a model.
              This default model is loaded without a top layer and initialized with random weights, unless the filename of pretrained weights is given.
              If a filename with pretrained weights is given, then these weights are loaded in. After this all layers except the last 'idx_unfreezed_layer'-layers are freezed, and are therefore not trainable anymore.
+
+
+            Pooling:
+            Optional pooling mode
+            None -  means that the output of the model will be the 4D tensor output of the last convolutional block.
+            avg - means that global average pooling will be applied to the output of the last convolutional block, and thus the output of the model will be a 2D tensor.
+            max - means that global max pooling will be applied.
         """
 
         print("Loading ResNet model")
         if custom_model is not None:
             print("Using custom model")
-            self.resnet_model: Model = custom_model
+            self.resnet_model = custom_model
         else:
             print("Using Keras ResNet50 model")
-            self.resnet_model: Model = ResNet50(
+            self.resnet_model = ResNet50(
                 include_top=False,
                 weights=None,
-                input_shape=(self.image_size, self.image_size, 3),
+                input_shape=self.resnet_input_shape,
                 pooling=pooling,  # pooling mode for when include_top is False
             )
 
@@ -78,10 +69,12 @@ class PreTrainResNet:
             for layer in (self.resnet_model.layers) if not idx_unfreezed_layer else (self.resnet_model.layers[:-idx_unfreezed_layer]):
                 layer.trainable = False
 
-    def append_layers_to_resnet_model(self, layers: tf.keras.Sequential):
-        self.resnet_model = Model(self.resnet_model, layers)
+    def append_layer_to_resnet_model(self, layer: tf.keras.layers.Layer):
+        self._check_resnet_model_initialized()
+        output = layer(self.resnet_model.output)
+        self.resnet_model = Model(inputs=self.resnet_model.layers[0].input, outputs=output)
 
-    def change_resnet_models_activation_function(self, new_activation_function: Activation):
+    def change_resnet_models_activation_function(self, new_activation_function: Callable[[tf.Tensor], tf.Tensor]):
         """
             Sets new activation function to all 'Activation' layer in a model
             This function works in-place and does not return anything.
@@ -104,13 +97,23 @@ class PreTrainResNet:
             if hasattr(layer, 'activation'):
                 layer.activation = new_activation_function
 
-    def compile_resnet_model(self, optimizer: tf.keras.optimizers.Optimizer, loss_function: tf.keras.losses.Loss, optimizer_learning_rate: float = 0.001, metrics: List[str] = ["accuracy"]):
+    def compile_resnet_model(self, optimizer: Optional[tf.keras.optimizers.Optimizer] = None, loss_function: Optional[tf.keras.losses.Loss] = None, metrics: List[str] = ["accuracy"]):
         """
             Compiles the resnet model with the given optimizer and loss function.
             This step is required before actually training the resnet model.
+            If no optimizer or loss function is passed to this function, the classses default Adam optimizer and standard loss function 'SparseCategoricalCrossentropy' is used.
         """
+
+        self._check_resnet_model_initialized()
+
         print("Compiling ResNet Model")
-        optimizer.learning_rate = optimizer_learning_rate
+
+        if optimizer is None:
+            optimizer = self.optimizer
+
+        if loss_function is None:
+            loss_function = self.loss_function
+
         self.resnet_model.compile(
             optimizer=optimizer,
             loss=loss_function,
@@ -159,26 +162,46 @@ class PreTrainResNet:
         if self.ds_val is None or self.ds_train is None:
             raise NotInitializedError("Validation/ Training dataset was not initialized")
 
+    def load_prepare_tfds_train_dataset(self, dataset_name: str, resnet50_preprocessing: bool, shuffle: bool, augment: bool, split: List[str] = ["train"], shuffle_seed: int = 42, random_rotation: float = 0.2, random_zoom=0.1, random_flip: str = "horizontal_and_vertical"):
+        print("Loading tfds train dataset")
+        self.ds_train = load_tfds(ds_name=dataset_name, split=split, batch_size=self.batch_size)
 
-def load_tfds(model_name: str, batch_size: int = 32, split: List[str] = ["train", "validation"], shuffle_files: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+        print("Preparing tfds train dataset")
+        self.ds_train = prepare_dataset(self.ds_train, img_size=self.image_size, batch_size=None, resnet50_preprocessing=resnet50_preprocessing, shuffle=shuffle, augment=augment, shuffle_seed=shuffle_seed, random_rotation=random_rotation, random_zoom=random_zoom, random_flip=random_flip)
+
+    def load_prepare_tfds_validation_dataset(self, dataset_name: str, resnet50_preprocessing: bool, shuffle: bool, augment: bool, split: List[str] = ["validation"], shuffle_seed: int = 42, random_rotation: float = 0.2, random_zoom=0.1, random_flip: str = "horizontal_and_vertical"):
+        print("Loading tfds validation dataset")
+        self.ds_val = load_tfds(ds_name=dataset_name, split=split, batch_size=self.batch_size)
+
+        print("Preparing tfds validation dataset")
+        self.ds_val = prepare_dataset(self.ds_train, img_size=self.image_size, batch_size=None, resnet50_preprocessing=resnet50_preprocessing, shuffle=shuffle, augment=augment, shuffle_seed=shuffle_seed, random_rotation=random_rotation, random_zoom=random_zoom, random_flip=random_flip)
+
+#    def load_prepare_external_train_dataset(self, ds: tf.data.Dataset, resnet50_preprocessing: bool, shuffle: bool, augment: bool):
+#        print("Loading and preparing external train datasets")
+#        self.ds_train = prepare_dataset(ds, img_size=self.image_size, batch_size=self.batch_size, resnet50_preprocessing=resnet50_preprocessing, shuffle=shuffle, augment=augment)
+#
+#    def load_prepare_external_validation_dataset(self, ds: tf.data.Dataset, resnet50_preprocessing: bool, shuffle: bool, augment: bool):
+#        print("Loading and preparing external validation datasets")
+#        self.ds_val = prepare_dataset(ds, img_size=self.image_size, batch_size=self.batch_size, resnet50_preprocessing=resnet50_preprocessing, shuffle=shuffle, augment=augment)
+
+
+def load_tfds(ds_name: str, batch_size: int, split: List[str] = ["train"], shuffle_files: bool = False) -> tf.data.Dataset:
     """
         Loads a tfds dataset by name with a given batch size and split
+        Batch size of -1 means loading the complete dataset at once
     """
-    print("Loading tfds dataset")
-
-    ds_train, ds_test = tfds.load(
-        model_name,
+    ds = tfds.load(
+        ds_name,
         split=split,
         as_supervised=True,
         batch_size=batch_size,
         shuffle_files=shuffle_files,
         with_info=False
     )
+    return ds[0]
 
-    return (ds_train, ds_test)
 
-
-def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preprocessing: bool, batch_size: int, shuffle: bool = False, shuffle_seed: int = 42, augment: bool = False, random_rotation: float = 0.2, random_zoom: float = 0.1, random_flip: str = "horizontal_and_vertical") -> tf.data.Dataset:
+def prepare_dataset(ds: tf.data.Dataset, img_size: int, resnet50_preprocessing: bool, batch_size: int | None, shuffle: bool = False, shuffle_seed: int = 42, augment: bool = False, random_rotation: float = 0.2, random_zoom: float = 0.1, random_flip: str = "horizontal_and_vertical") -> tf.data.Dataset:
     """
         Prepares datasets for training and validation for the ResNet50 model.
         This function applies image resizing, resnet50-preprocessing to the dataset. Optionally the data can be shuffled or further get augmented (random flipping, etc.)
@@ -199,7 +222,7 @@ def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preproces
     ds = ds.map(lambda x, y: (resizer(x), y),
                 num_parallel_calls=AUTOTUNE)
 
-    if apply_resnet50_preprocessing:
+    if resnet50_preprocessing:
         ds = ds.map(lambda x, y: (tf.keras.applications.resnet50.preprocess_input(x), y),
                     num_parallel_calls=AUTOTUNE)
 
@@ -219,7 +242,7 @@ def prepare_dataset(ds: tf.data.Dataset, img_size: int, apply_resnet50_preproces
     return ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 
-def visualize_training(history, epochs, file_save_name: str = None):
+def visualize_training(history, epochs, file_save_name: Optional[str] = None):
     """
         Visualized the accurarcy metrics for a model's training process.
         If a filename is specified, the figure is not shown but directly saved as a file.
